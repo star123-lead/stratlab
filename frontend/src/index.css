@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background-color: #0a0b0d;
+}
+
+body {
+  @apply bg-ink text-paper font-mono antialiased;
+}
+
+::selection {
+  background-color: #ff9f1c;
+  color: #0a0b0d;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
