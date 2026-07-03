@@ -1,16 +1,11 @@
 """
-Historical price data fetching, backed by Yahoo Finance via the `yfinance`
-library. No API key is required.
-
-Kept isolated in this one module on purpose: if you ever want to swap in a
-different provider (Alpha Vantage, Twelve Data, Polygon, etc.), this is the
-only file that needs to change. Everything downstream just expects a
-DataFrame indexed by date with Open/High/Low/Close/Volume columns.
+Historical price data fetching, backed by Stooq (via pandas-datareader).
+No API key is required. Stooq is reliable on cloud hosts, unlike Yahoo
+Finance which frequently blocks datacenter IPs.
 """
 
 import pandas as pd
-import yfinance as yf
-from curl_cffi import requests as cffi_requests
+import pandas_datareader.data as web
 
 
 def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -23,10 +18,8 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         raise ValueError("Ticker symbol is required.")
 
     try:
-        session = cffi_requests.Session(impersonate="chrome")
-        stock = yf.Ticker(ticker, session=session)
-        df = stock.history(start=start_date, end=end_date, interval="1d")
-    except Exception as exc:  # network / yfinance internals
+        df = web.DataReader(ticker, "stooq", start=start_date, end=end_date)
+    except Exception as exc:
         raise ValueError(f"Could not fetch data for '{ticker}': {exc}") from exc
 
     if df is None or df.empty:
@@ -37,10 +30,8 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
             "and London needs .L."
         )
 
-    # yfinance can return a tz-aware index; normalize to naive dates so it
-    # serializes cleanly and compares predictably everywhere downstream.
-    if df.index.tz is not None:
-        df.index = df.index.tz_localize(None)
+    # Stooq returns data newest-first; sort ascending like yfinance did.
+    df = df.sort_index()
 
     df = df[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"])
 
