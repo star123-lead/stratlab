@@ -10,6 +10,7 @@ DataFrame indexed by date with Open/High/Low/Close/Volume columns.
 
 import pandas as pd
 import yfinance as yf
+from curl_cffi import requests as cffi_requests
 
 
 def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -22,7 +23,8 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         raise ValueError("Ticker symbol is required.")
 
     try:
-        stock = yf.Ticker(ticker)
+        session = cffi_requests.Session(impersonate="chrome")
+        stock = yf.Ticker(ticker, session=session)
         df = stock.history(start=start_date, end=end_date, interval="1d")
     except Exception as exc:  # network / yfinance internals
         raise ValueError(f"Could not fetch data for '{ticker}': {exc}") from exc
