@@ -5,7 +5,7 @@ Finance which frequently blocks datacenter IPs.
 """
 
 import pandas as pd
-import pandas_datareader.data as web
+from pandas_datareader.stooq import StooqDailyReader
 
 
 def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -18,7 +18,8 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         raise ValueError("Ticker symbol is required.")
 
     try:
-        df = web.DataReader(ticker, "stooq", start=start_date, end=end_date)
+        reader = StooqDailyReader(symbols=ticker, start=start_date, end=end_date)
+        df = reader.read()
     except Exception as exc:
         raise ValueError(f"Could not fetch data for '{ticker}': {exc}") from exc
 
@@ -30,9 +31,7 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
             "and London needs .L."
         )
 
-    # Stooq returns data newest-first; sort ascending like yfinance did.
     df = df.sort_index()
-
     df = df[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"])
 
     if len(df) < 30:
