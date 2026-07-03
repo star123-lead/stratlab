@@ -18,15 +18,18 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     if not ticker:
         raise ValueError("Ticker symbol is required.")
 
-    # Stooq expects US tickers lowercase with .us suffix, e.g. aapl.us
     stooq_symbol = ticker.lower()
     if "." not in stooq_symbol:
         stooq_symbol += ".us"
 
-    url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&i=d"
+    d1 = start_date.replace("-", "")
+    d2 = end_date.replace("-", "")
+
+    url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&d1={d1}&d2={d2}&i=d"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     try:
-        resp = requests.get(url, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
         df = pd.read_csv(io.StringIO(resp.text))
     except Exception as exc:
@@ -42,8 +45,6 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
 
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date").sort_index()
-
-    df = df.loc[start_date:end_date]
 
     df = df[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"])
 
