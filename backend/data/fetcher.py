@@ -1,55 +1,56 @@
 """
-Historical price data fetching, backed directly by Stooq's CSV endpoint.
-No API key is required. Stooq is reliable on cloud hosts, unlike Yahoo
-Finance which frequently blocks datacenter IPs.
+Historical price data fetching, backed by Alpha Vantage's free API.
+Requires an API key set as the ALPHA_VANTAGE_KEY environment variable.
 """
 
+import os
 import pandas as pd
 import requests
-import io
+
+API_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "")
 
 
 def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """
-    Fetch daily OHLCV history for `ticker` between start_date and end_date
-    (both 'YYYY-MM-DD' strings). Raises ValueError on bad input / no data.
-    """
     ticker = (ticker or "").strip().upper()
     if not ticker:
         raise ValueError("Ticker symbol is required.")
+    if not API_KEY:
+        raise ValueError("Server misconfigured: ALPHA_VANTAGE_KEY is not set.")
 
-    stooq_symbol = ticker.lower()
-    if "." not in stooq_symbol:
-        stooq_symbol += ".us"
-
-    d1 = start_date.replace("-", "")
-    d2 = end_date.replace("-", "")
-
-    url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&d1={d1}&d2={d2}&i=d"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    url = (
+        "https://www.alphavantage.co/query"
+        f"?function=TIME_SERIES_DAILY&symbol={ticker}"
+        f"&outputsize=full&apikey={API_KEY}&datatype=json"
+    )
 
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        print(f"[STOOQ DEBUG] URL: {url}")
-        print(f"[STOOQ DEBUG] Status: {resp.status_code}")
-        print(f"[STOOQ DEBUG] First 300 chars: {resp.text[:300]}")
+        resp = requests.get(url, timeout=15)
         resp.raise_for_status()
-        df = pd.read_csv(io.StringIO(resp.text))
+        data = resp.json()
     except Exception as exc:
         raise ValueError(f"Could not fetch data for '{ticker}': {exc}") from exc
 
-    if df is None or df.empty or "Date" not in df.columns:
+    series = data.get("Time Series (Daily)")
+    if not series:
+        note = data.get("Note") or data.get("Information") or data.get("Error Message")
         raise ValueError(
             f"No price data found for '{ticker}' in that date range. "
-            "Check the symbol — US tickers are bare (AAPL, MSFT), "
-            "NSE tickers need a .NS suffix (RELIANCE.NS), BSE needs .BO, "
-            "and London needs .L."
+            f"{note or 'Check the symbol and try again.'}"
         )
 
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.set_index("Date").sort_index()
+    df = pd.DataFrame.from_dict(series, orient="index")
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+    df = df.rename(columns={
+        "1. open": "Open",
+        "2. high": "High",
+        "3. low": "Low",
+        "4. close": "Close",
+        "5. volume": "Volume",
+    })
+    df = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
 
-    df = df[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"])
+    df = df.loc[start_date:end_date]
 
     if len(df) < 30:
         raise ValueError(
