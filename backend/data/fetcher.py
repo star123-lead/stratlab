@@ -7,7 +7,7 @@ import os
 import pandas as pd
 import requests
 
-API_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "")
+API_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "PYNT7KAMG239SNM5")
 
 
 def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
