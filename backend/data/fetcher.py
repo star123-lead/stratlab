@@ -30,6 +30,9 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
 
     try:
         resp = requests.get(url, headers=headers, timeout=15)
+        print(f"[STOOQ DEBUG] URL: {url}")
+        print(f"[STOOQ DEBUG] Status: {resp.status_code}")
+        print(f"[STOOQ DEBUG] First 300 chars: {resp.text[:300]}")
         resp.raise_for_status()
         df = pd.read_csv(io.StringIO(resp.text))
     except Exception as exc:
