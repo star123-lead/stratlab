@@ -1,6 +1,9 @@
 """
 Historical price data fetching, backed by Alpha Vantage's free API.
 Requires an API key set as the ALPHA_VANTAGE_KEY environment variable.
+
+Note: free-tier Alpha Vantage only supports "compact" output (~100 most
+recent trading days). Full history requires a paid plan.
 """
 
 import os
@@ -20,7 +23,7 @@ def fetch_history(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     url = (
         "https://www.alphavantage.co/query"
         f"?function=TIME_SERIES_DAILY&symbol={ticker}"
-        f"&outputsize=full&apikey={API_KEY}&datatype=json"
+        f"&apikey={API_KEY}&datatype=json"
     )
 
     try:
