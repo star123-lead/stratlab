@@ -7,20 +7,26 @@ Run from inside backend/:
 
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from backtest.engine import compute_metrics, run_backtest
 from data.fetcher import fetch_history
 from strategies import STRATEGY_REGISTRY
 from strategies.metadata import STRATEGY_METADATA
 
+from database import Base, engine, get_db
+from models import User
+import auth
+
+# Create DB tables on startup if they don't exist yet.
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="StratLab Backtester")
 
-# Wide open for local development. The Vite dev server proxies /api to this
-# server (see frontend/vite.config.ts) so this mainly matters if you ever
-# hit the API directly from a different origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,6 +34,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    payload = auth.decode_access_token(token)
+    if payload is None or "sub" not in payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+
+    user = db.query(User).filter(User.email == payload["sub"]).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found.")
+
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Auth schemas + endpoints
+# ---------------------------------------------------------------------------
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+@app.post("/api/signup", response_model=TokenResponse)
+def signup(req: SignupRequest, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == req.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="An account with that email already exists.")
+
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    user = User(email=req.email, hashed_password=auth.hash_password(req.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = auth.create_access_token({"sub": user.email})
+    return {"access_token": token}
+
+
+@app.post("/api/login", response_model=TokenResponse)
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email).first()
+    if not user or not auth.verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+
+    token = auth.create_access_token({"sub": user.email})
+    return {"access_token": token}
+
+
+@app.get("/api/me")
+def me(current_user: User = Depends(get_current_user)):
+    return {"email": current_user.email}
+
+
+# ---------------------------------------------------------------------------
+# Backtest endpoints (now require login)
+# ---------------------------------------------------------------------------
 
 class BacktestRequest(BaseModel):
     ticker: str
@@ -45,7 +121,7 @@ def get_strategies():
 
 
 @app.post("/api/backtest")
-def backtest(req: BacktestRequest):
+def backtest(req: BacktestRequest, current_user: User = Depends(get_current_user)):
     if req.strategy_id not in STRATEGY_REGISTRY:
         raise HTTPException(status_code=400, detail=f"Unknown strategy '{req.strategy_id}'.")
 
